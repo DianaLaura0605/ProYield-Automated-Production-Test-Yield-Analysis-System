@@ -1,0 +1,178 @@
+import csv
+import random
+import os
+from collections import Counter
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+# ==================================
+# Configuration
+# ==================================
+
+RANDOM_SEED = 42
+TOTAL_UNITS = 500
+
+DATA_DIR = "data"
+IMAGE_DIR = "images"
+
+random.seed(RANDOM_SEED)
+
+
+# ==================================
+# Test Specifications
+# ==================================
+
+TEST_PARAMETERS = {
+    "voltage": {
+        "lsl": 4.8,
+        "usl": 5.2,
+        "mean": 5.0,
+        "std": 0.08,
+        "unit": "V"
+    },
+    "current": {
+        "lsl": 90,
+        "usl": 120,
+        "mean": 105,
+        "std": 6,
+        "unit": "mA"
+    },
+    "rise_time": {
+        "lsl": 8,
+        "usl": 12,
+        "mean": 10,
+        "std": 1.2,
+        "unit": "ns"
+    }
+}
+
+
+# ==================================
+# Directory Setup
+# ==================================
+
+def setup_directories():
+    """Create required output directories."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(IMAGE_DIR, exist_ok=True)
+
+
+# ==================================
+# Data Simulation
+# ==================================
+
+def simulate_unit(unit_id):
+    """
+    Simulates test measurements for a single Device Under Test (DUT).
+    """
+    record = {"unit_id": unit_id}
+    failures = []
+
+    for param, spec in TEST_PARAMETERS.items():
+        value = random.gauss(spec["mean"], spec["std"])
+        record[param] = value
+
+        if not (spec["lsl"] <= value <= spec["usl"]):
+            failures.append(param)
+
+    record["result"] = "PASS" if not failures else "FAIL"
+    record["failure_mode"] = "NONE" if not failures else ",".join(failures)
+
+    return record
+
+
+def simulate_production():
+    """Simulates an entire production batch."""
+    return [simulate_unit(uid) for uid in range(1, TOTAL_UNITS + 1)]
+
+
+# ==================================
+# Data Storage
+# ==================================
+
+def save_results(data, filename=f"{DATA_DIR}/test_results.csv"):
+    """Save test results to CSV."""
+    with open(filename, "w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=data[0].keys())
+        writer.writeheader()
+        writer.writerows(data)
+
+
+# ==================================
+# Yield and Failure Analysis
+# ==================================
+
+def calculate_yield(data):
+    total = len(data)
+    passed = sum(1 for d in data if d["result"] == "PASS")
+    failed = total - passed
+    yield_pct = (passed / total) * 100
+
+    return total, passed, failed, yield_pct
+
+
+def analyze_failures(data):
+    """
+    Analyzes failure distribution per test parameter.
+    """
+    failure_counter = Counter()
+
+    for d in data:
+        if d["result"] == "FAIL":
+            for mode in d["failure_mode"].split(","):
+                failure_counter[mode] += 1
+
+    return failure_counter
+
+
+# ==================================
+# Visualization
+# ==================================
+
+def plot_histogram(data, parameter):
+    values = [d[parameter] for d in data]
+    spec = TEST_PARAMETERS[parameter]
+
+    plt.figure()
+    plt.hist(values, bins=40)
+    plt.axvline(spec["lsl"])
+    plt.axvline(spec["usl"])
+    plt.title(f"{parameter.capitalize()} Distribution")
+    plt.xlabel(f"{parameter} ({spec['unit']})")
+    plt.ylabel("Count")
+    plt.grid()
+    plt.savefig(f"{IMAGE_DIR}/{parameter}_histogram.png")
+    plt.close()
+
+
+# ==================================
+# Main Execution
+# ==================================
+
+def main():
+    setup_directories()
+
+    data = simulate_production()
+    save_results(data)
+
+    total, passed, failed, yield_pct = calculate_yield(data)
+    failure_stats = analyze_failures(data)
+
+    print("\nPRODUCTION TEST SUMMARY")
+    print(f"Total Units Tested : {total}")
+    print(f"Passed Units      : {passed}")
+    print(f"Failed Units      : {failed}")
+    print(f"Yield             : {yield_pct:.2f}%")
+
+    print("\nFAILURE DISTRIBUTION")
+    for failure, count in failure_stats.items():
+        print(f"{failure}: {count}")
+
+    for param in TEST_PARAMETERS.keys():
+        plot_histogram(data, param)
+
+
+if __name__ == "__main__":
+    main()
